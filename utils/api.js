@@ -106,3 +106,33 @@ export const deleteProposal = (_id) => {
 		createError(e);
 	}
 }
+
+export const getCoinPrices = async (params = {}) => {
+	try {
+		const result = await axios.get('prices', { params });
+		return result;
+	} catch (e) {
+		console.log(e)
+		createError(e);
+	}
+}
+
+export const getCoinPrice = async (id) => {
+	try {
+		const result = await axios.get(`prices/${id}`);
+		return result;
+	} catch (e) {
+		console.log(e)
+		createError(e);
+	}
+}
+
+export const getProjectTokenPrices = async () => {
+	try {
+		const result = await axios.get('prices/tokens');
+		return result;
+	} catch (e) {
+		console.log(e)
+		createError(e);
+	}
+}
