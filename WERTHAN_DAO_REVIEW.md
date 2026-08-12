@@ -1,219 +1,60 @@
-# WERTHAN DAO DB-less Review
+# WERTHAN DAO Project Review
 
 Date: 2026-08-12  
-Branch reviewed: `dev`
+Branch reviewed: `dev`  
+Scope: 45-60 minute DB-less review, local run, frontend/backend walkthrough, Web3 flow review, and testnet readiness check.
 
-## Scope
+## Project Understanding
 
-This review focuses on the project structure, features, frontend behavior, wallet flow, governance flow, reward flow, and the intended off-chain/on-chain sync model.
+WERTHAN DAO is a Next.js Web3 application for a DAO-style ecosystem. The product combines a public marketing site, wallet connection, proposal creation, voting, escrow/treasury visibility, reward release flows, token information, and MongoDB-backed proposal metadata. The intended architecture is hybrid: smart contracts handle governance and rewards on-chain, while MongoDB stores proposal metadata, files, and sync status off-chain.
 
-Per follow-up guidance, I reviewed the project without requiring a working MongoDB instance. I also checked whether the current repository is ready for testnet execution.
+## 1. Issues Encountered While Running The Project
 
-## Local Setup
+- The project installed and ran locally, but the native Next.js SWC package failed on this Windows/Node environment. Installing the matching WASM SWC package allowed `npm run dev` to start.
+- The main pages were reviewable without MongoDB: `/`, `/vote`, and `/reward` rendered successfully. `/vote` and `/reward` correctly gate core actions behind wallet connection.
+- `/api/health` returned successfully and reported Mongo as disconnected, which matches the DB-less review scope.
+- Proposal API routes such as `/api/proposals/live`, `/api/proposals/pending`, and `/api/proposals/past` hang when MongoDB is unavailable because their error handlers log failures but do not return an HTTP response.
+- `npm run build` is fragile because `pages/index.js` imports `Inter` from `next/font/google`. In this environment, the Google Fonts fetch timed out, even though the imported font constant appears unused.
+- The README setup commands do not fully match `package.json`. For example, the repo documents commands like `npm dev` and `npm build`, but the actual commands are `npm run dev`, `npm run build`, and `npm run lint`.
 
-The project is a Next.js 13 / React 18 Web3 app using Web3.js, `@web3-react`, MongoDB-backed API routes, and smart contract ABIs.
+## 2. Top 3 Technical Risks
 
-Commands used:
+1. **High - Core governance voting is incomplete.** The `approve` and `deny` handlers in the vote page are empty, and the Web3 `vote` helper is commented out. This means users can view governance screens, but the central DAO action - casting votes - is not currently functional from the UI.
+2. **High - Network configuration is not safely testnet-ready.** The `.env` file contains testnet-style values, but the running app imports hardcoded Polygon mainnet chain and contract constants from `utils/_constants.js`. This makes it easy to think the app is using testnet while it is actually pointed at mainnet configuration.
+3. **Medium/High - On-chain/off-chain sync can drift.** Proposal creation saves a MongoDB record before the wallet transaction is completed, then syncs the on-chain proposal id afterward. If the wallet transaction is rejected or fails, Mongo can contain orphan or unsynced proposals. The same area also needs stronger API error responses and recovery logic.
 
-```powershell
-git switch dev
-npm install
-npm run dev
-```
+## 3. MVP Priorities
 
-On this Windows/Node 24 environment, Next could not load the native SWC package. I used this local workaround:
+- **Make environment and testnet configuration reliable first.** Move chain id, chain name, RPC URL, and contract addresses into environment-driven config, then provide a known working testnet deployment.
+- **Finish the proposal lifecycle.** Implement approve/deny voting, restore the Web3 vote helper, verify proposal creation, and add sync/retry behavior for failed wallet transactions.
+- **Fix correctness issues in Web3 and dashboard data.** Align proposal amount units between gas estimation and transaction send, fix escrow balance state mapping, and correct the FTO balance helper so it reads the intended contract.
+- **Harden user-generated content and APIs.** Sanitize proposal descriptions rendered with `dangerouslySetInnerHTML`, and ensure every API route returns clear JSON on failure instead of hanging.
+- **Add a small smoke-test suite.** Cover DB-less rendering, API failure behavior, and at least one mocked governance flow so future reviewers can validate the app quickly.
 
-```powershell
-npm install --no-save --package-lock=false @next/swc-wasm-nodejs@13.2.4
-```
+## 4. Developer Experience Improvements
 
-After that, the dev server started and the main pages were reviewable.
+- Update README setup commands and add a clear "DB-less review mode" section.
+- Add a complete `.env.example` with separate sections for local MongoDB, testnet RPC, network id, contract addresses, and public-only browser variables.
+- Document which contracts are deployed on which network, and match each address to its ABI.
+- Add sample proposal data or a mock proposal mode so reviewers can inspect proposal states without needing MongoDB.
+- Make linting non-interactive by committing an ESLint configuration.
+- Add health checks for MongoDB, RPC connectivity, chain id, and contract availability.
+- Document the expected review flow: start app, connect test wallet, create proposal, vote, verify Mongo sync, inspect rewards.
 
-## Runtime Results Without DB
+## 5. 30-Day Execution Plan
 
-These routes rendered successfully:
+**Week 1 - Setup, config, and build reliability.** Fix README commands, add `.env.example`, remove or self-host the unused Google Font dependency, make network/contract config environment-driven, and confirm a working testnet RPC plus deployed testnet addresses.
 
-- `/`
-- `/vote`
-- `/reward`
+**Week 2 - Governance MVP.** Complete proposal creation and approve/deny voting from the UI, fix amount unit handling, add transaction status states, and implement sync recovery for failed or rejected wallet transactions.
 
-Observed behavior:
+**Week 3 - Rewards, escrow, and API hardening.** Fix reward eligibility case handling, wire any static reward buttons, correct escrow balance displays, sanitize proposal HTML, and make all API routes return structured error responses.
 
-- `/vote` renders the escrow section and then gates governance interaction behind wallet connection.
-- `/reward` renders the wallet-gated reward state.
-- `/api/health` responds and reports `mongo: disconnected`, which matches the DB-less review scope.
-- `/api/prices?ids=bitcoin` returns market data successfully when the external price API is reachable.
+**Week 4 - End-to-end validation and release readiness.** Run the full testnet walkthrough with a funded test wallet, validate on-chain events against off-chain Mongo records, add smoke/E2E tests, prepare deployment notes, and create a reviewer checklist for future handoffs.
 
-Routes that still depend on MongoDB:
+## 6. Candid Opinion: Technical Viability And Excitement
 
-- `/api/proposals/live`
-- `/api/proposals/pending`
-- `/api/proposals/past`
-- `/api/proposals/create`
-- `/api/proposals/sync`
-- `/api/proposals/attachfile`
+The project is technically viable. The architecture is recognizable and reasonable for this type of DAO product: Next.js frontend, wallet connectors, Web3 contract reads/writes, MongoDB proposal metadata, treasury views, and reward release flows.
 
-The proposal list endpoints currently hang without DB because they catch Mongo errors but do not return an error response.
+My excitement level is positive because the product direction is concrete and the main pieces are already present. My caution is that it is not MVP-ready yet. The biggest blockers are practical execution issues: voting is incomplete, testnet/mainnet separation is unclear, proposal sync can drift, and API failures are not handled cleanly.
 
-## Project Structure
-
-The project is organized as:
-
-- `pages/` - Next.js routes and API routes
-- `component/` - shared UI sections and layout components
-- `utils/` - Web3 calls, wallet connectors, API client, helpers, pricing utilities
-- `abi/` - smart contract ABIs
-- `db/` - Mongo connection and proposal model
-- `public/` - static images, scripts, uploads, and vendor assets
-
-Main user-facing routes:
-
-- `/` - marketing homepage
-- `/vote` - DAO proposal, vote, and escrow account area
-- `/reward` - founder/team/equity/CTO reward release area
-- `/token`, `/roadmap`, `/team`, `/faq`, `/contact`, `/bloggrid`, `/blogdetails` - supporting content pages
-
-## Core Feature Flow
-
-### Wallet Flow
-
-Wallet connection is handled through:
-
-- MetaMask / injected wallet
-- WalletConnect
-- Coinbase Wallet
-
-The app tries to enforce the configured chain before activation. However, the active network values are imported from `utils/_constants.js`, not from `.env`.
-
-### Governance Flow
-
-The intended proposal flow is:
-
-1. User connects wallet.
-2. App checks HODL balance, vote count, proposal eligibility, and vote eligibility.
-3. Eligible user opens the New Proposal modal.
-4. Frontend creates an off-chain Mongo proposal record.
-5. Frontend calls the DAO smart contract `createProposal`.
-6. Frontend syncs the returned on-chain proposal id back into Mongo.
-
-This is a hybrid off-chain/on-chain model: proposal metadata lives in MongoDB, while proposal identity, voting, and execution state live on-chain.
-
-### Reward Flow
-
-The reward page checks whether the connected account appears in one of the local allowlists:
-
-- founders
-- team members
-- equity partners
-
-Then it reads releasable balances from splitter contracts and offers `release()` actions. CTO reward release is also wired to a splitter contract.
-
-## Testnet Readiness
-
-The current repository is not fully wired for testnet execution.
-
-`.env` contains testnet-style values such as:
-
-- `NETWORK_CHAIN_ID=5`
-- `NETWORK_CHAIN_NAME=goerli`
-- testnet-looking contract addresses
-
-But the application imports hardcoded values from `utils/_constants.js`, including:
-
-```js
-export const NETWORK_CHAIN_ID = 137;
-export const NETWORK_CHAIN_NAME = 'polygon-mainnet';
-export const HODLDAO_ADDRESS = '0xa8b0249eB35cA066f8E0f35DFbC28c54Dc4bDA37';
-export const HODL_ADDRESS = '0xD1777722a20CF1A71f0204E066011AAD040eC39d';
-```
-
-So the running app still targets Polygon mainnet unless those constants are changed or refactored to read environment variables.
-
-I also tested the configured RPC candidates:
-
-- `NEXT_PUBLIC_RPC_URL` resolves to Polygon chain id `137`.
-- Goerli RPC candidates from `.env` were not reachable from this environment.
-
-Conclusion: testnet testing is possible only after the app is pointed at a reachable testnet RPC and matching deployed testnet contract addresses.
-
-## Key Findings
-
-### 1. Voting UI is incomplete
-
-In `pages/vote/index.jsx`, the `approve` and `deny` handlers are empty. In `utils/web3api.js`, the `vote` function is commented out.
-
-Impact: users can view proposal details, but cannot actually cast approve/deny votes from the current UI.
-
-### 2. Proposal amount mismatch
-
-In `utils/web3api.js`, gas estimation converts `amount` to Wei, but the actual transaction sends the raw `amount`:
-
-```js
-estimateGas(... EthToWei(String(data.amount)) ...)
-send(... data.amount ...)
-```
-
-Impact: on-chain proposal amounts may be wrong or transaction behavior may differ from gas estimation.
-
-### 3. Off-chain/on-chain sync can leave orphan proposals
-
-The app saves the Mongo proposal first, then calls the smart contract, then marks the Mongo proposal as synced.
-
-Impact: if the wallet transaction is rejected or fails after Mongo save, the database can contain proposals that never existed on-chain.
-
-### 4. Proposal APIs hang when Mongo is unavailable
-
-Several API routes catch errors with `console.log(error)` but do not return a response.
-
-Impact: frontend requests can stall, making DB/RPC issues harder to diagnose.
-
-### 5. Stored HTML is rendered without sanitization
-
-Proposal descriptions are displayed using `dangerouslySetInnerHTML`.
-
-Impact: if user-submitted proposal HTML is not sanitized before storage or rendering, there is stored XSS risk.
-
-### 6. Escrow dashboard has incorrect state mapping
-
-In `component/Homepage/Escrowaccount/Escrowaccount.jsx`, WERTHAN MONI, HOT FUND, and Art Foundation balance fetches update `equityHoldingBalance` instead of their own state fields. The Art Foundation card also displays `inOutFloBalance`.
-
-Impact: several displayed treasury balances can be inaccurate.
-
-### 7. FTO balance helper reads the HODL contract
-
-`getFTOBalance` initializes `hodlContract` and calls `hodlContract.methods.balanceOf`.
-
-Impact: FTO balance display/checks would return HODL balances instead of FTO balances if used.
-
-### 8. Build depends on Google Fonts
-
-`pages/index.js` imports `Inter` from `next/font/google`, but the resulting `inter` constant is not used.
-
-Impact: production build can fail or slow down when Google Fonts is unreachable, even though the import appears unnecessary.
-
-## Recommended Next Steps
-
-1. Refactor `utils/_constants.js` so network id, network name, RPC URL, and contract addresses come from environment variables.
-2. Provide a dedicated testnet `.env.example` with matching RPC and deployed contract addresses.
-3. Implement vote approve/deny handlers and restore the Web3 vote function.
-4. Fix proposal amount conversion so estimation and send use the same unit.
-5. Change proposal API catch blocks to return clear `500` JSON responses.
-6. Add a sync recovery strategy for Mongo proposals created before failed/rejected wallet transactions.
-7. Sanitize proposal HTML before rendering.
-8. Fix escrow balance state mapping.
-9. Remove unused `next/font/google` import or self-host the font.
-10. Add smoke tests for DB-less rendering, API error responses, and Web3 read helpers.
-
-## Overall Assessment
-
-The project has a recognizable DAO architecture: a public Next.js frontend, wallet connection, on-chain read/write utilities, Mongo-backed proposal metadata, treasury transparency, and reward release flows.
-
-The main gaps are not in the high-level structure. They are in execution readiness:
-
-- network/testnet configuration is not consistently environment-driven
-- voting actions are incomplete
-- proposal sync can drift between Mongo and chain
-- API routes need stronger failure behavior
-- some displayed balances can be wrong
-
-With those issues addressed, the project would be much easier to test end-to-end on a dedicated testnet deployment.
+If the team focuses the next sprint on testnet configuration, complete governance actions, and reliable proposal sync, this can become a much stronger hands-on MVP quickly.
